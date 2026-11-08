@@ -3,6 +3,10 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { COLORS, db, resizeImage, saveWine, suggestWindow, type Wine, type WineColor } from '../db';
 import { ColorDot, Stepper } from '../components/ui';
+import Bottle from '../components/Bottle';
+import LabelPicker from '../components/LabelPicker';
+import { findAppellation } from '../appellations';
+import { scanLabel, type LabelInfo } from '../labelScan';
 
 const SIZES = [
   { v: 37.5, l: 'Demi (37,5 cl)' },
@@ -39,6 +43,9 @@ export default function WineForm() {
   const [w, setW] = useState<Wine>(blank);
   const [more, setMore] = useState(false);
   const [saved, setSaved] = useState<string>();
+  const [scanMsg, setScanMsg] = useState<string>();
+  const [scanResult, setScanResult] = useState<{ ok: boolean; text: string }>();
+  const [picker, setPicker] = useState(false);
   const editing = !!id;
 
   useEffect(() => {
@@ -70,7 +77,11 @@ export default function WineForm() {
   /** Complète automatiquement les champs vides à partir des vins déjà saisis. */
   function autofill(field: 'producer' | 'appellation', value: string) {
     const match = all?.find((x) => x[field].toLowerCase() === value.trim().toLowerCase());
-    if (!match) return;
+    if (!match) {
+      const known = field === 'appellation' ? findAppellation(value) : undefined;
+      if (known) setW((p) => ({ ...p, appellation: known.name, region: p.region || known.region, color: p.appellation ? p.color : known.color }));
+      return;
+    }
     setW((p) => ({
       ...p,
       appellation: p.appellation || match.appellation,
@@ -102,10 +113,75 @@ export default function WineForm() {
     if (file) set('photo', await resizeImage(file));
   }
 
+  /** Photo de l'étiquette -> lecture -> pré-remplissage des champs reconnus. */
+  async function onScan(file?: File) {
+    if (!file) return;
+    setScanResult(undefined);
+    setScanMsg('Préparation de la photo…');
+    try {
+      const [big, small] = await Promise.all([resizeImage(file, 1600), resizeImage(file, 480)]);
+      set('photo', small);
+      const { info, mode } = await scanLabel(big, lists.producers, setScanMsg);
+      const known = info.appellation ? findAppellation(info.appellation) : undefined;
+      const merged: LabelInfo = {
+        ...info,
+        appellation: known?.name ?? info.appellation,
+        region: info.region ?? known?.region,
+        color: info.color ?? known?.color,
+      };
+      const labels: Record<keyof LabelInfo, string> = {
+        producer: 'domaine', name: 'cuvée', appellation: 'appellation', region: 'région', color: 'couleur',
+        vintage: 'millésime', size: 'contenance', grapes: 'cépages',
+      };
+      const found = (Object.keys(labels) as (keyof LabelInfo)[]).filter((k) => merged[k] !== undefined && merged[k] !== '');
+      setW((p) => ({
+        ...p,
+        producer: merged.producer ?? p.producer,
+        name: merged.name ?? p.name,
+        appellation: merged.appellation ?? p.appellation,
+        region: merged.region ?? p.region,
+        color: merged.color ?? p.color,
+        vintage: merged.vintage ?? p.vintage,
+        size: merged.size ?? p.size,
+        grapes: merged.grapes ?? p.grapes,
+      }));
+      if (found.length === 0) {
+        setScanResult({ ok: false, text: "Aucune information reconnue. Essayez une photo plus nette, bien de face et éclairée, ou complétez à la main." });
+      } else {
+        setScanResult({
+          ok: true,
+          text:
+            `Reconnu : ${found.map((k) => labels[k]).join(', ')}. Vérifiez avant d'enregistrer.` +
+            (mode === 'ocr' ? ' Pour une lecture plus fiable, activez la lecture par IA dans ⚙️ Réglages.' : ''),
+        });
+      }
+    } catch (e) {
+      setScanResult({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setScanMsg(undefined);
+    }
+  }
+
   return (
     <form className="stack form" onSubmit={(e) => submit(e)}>
       <h1>{editing ? 'Modifier le vin' : 'Ajouter un vin'}</h1>
       {saved && <div className="toast">{saved}</div>}
+
+      <section className="scan-box">
+        <button type="button" className="bottle-preview" onClick={() => setPicker(true)} aria-label="Changer l'image de l'étiquette">
+          <Bottle wine={w} height={150} />
+        </button>
+        <div className="stack">
+          <label className={`btn primary ${scanMsg ? 'disabled' : ''}`}>
+            📷 Scanner l'étiquette
+            <input type="file" accept="image/*" capture="environment" hidden disabled={!!scanMsg} onChange={(e) => { onScan(e.target.files?.[0]); e.target.value = ''; }} />
+          </label>
+          <button type="button" className="btn ghost" onClick={() => setPicker(true)}>🖼️ Image de l'étiquette</button>
+          <small className="muted">{w.labelImage ? 'Image choisie' : 'Étiquette dessinée à partir de la fiche'}</small>
+        </div>
+      </section>
+      {scanMsg && <div className="banner"><span className="spinner" /> {scanMsg}</div>}
+      {scanResult && <div className={scanResult.ok ? 'toast' : 'banner'}>{scanResult.text}</div>}
 
       <div className="chips">
         {COLORS.map((c) => (
@@ -201,6 +277,15 @@ export default function WineForm() {
             </div>
           </div>
         </>
+      )}
+
+      {picker && (
+        <LabelPicker
+          initialQuery={[w.producer, w.name, w.appellation].filter(Boolean).join(' ')}
+          photo={w.photo}
+          onPick={(img) => set('labelImage', img)}
+          onClose={() => setPicker(false)}
+        />
       )}
 
       <datalist id="dl-producers">{lists.producers.map((v) => <option key={v} value={v} />)}</datalist>

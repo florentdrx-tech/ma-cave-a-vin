@@ -26,7 +26,8 @@ export interface Wine {
   drinkUntil?: number; // année de fin d'apogée
   grapes?: string;
   notes?: string;
-  photo?: string; // miniature dataURL
+  photo?: string; // photo prise avec l'appareil (miniature dataURL)
+  labelImage?: string; // image d'étiquette affichée sur la bouteille (dataURL ou adresse web)
   createdAt: number;
   updatedAt: number;
 }

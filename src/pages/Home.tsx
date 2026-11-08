@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { COLORS, db, drinkStatus, wineTitle } from '../db';
 import { ColorDot, Empty, StatusBadge, fmtMoney, fmtTemp } from '../components/ui';
 import { tempLevel, humLevel } from '../thermometer';
+import Bottle from '../components/Bottle';
 import { useThermo } from '../thermoContext';
 
 export default function Home() {
@@ -76,7 +77,7 @@ export default function Home() {
             {toDrink.map((w) => (
               <li key={w.id}>
                 <Link to={`/vin/${w.id}`} className="row">
-                  <ColorDot color={w.color} />
+                  <Bottle wine={w} height={48} className="mini" />
                   <span className="grow">
                     <b>{wineTitle(w)}</b>
                     <small className="muted">{[w.appellation, w.vintage].filter(Boolean).join(' · ')}{w.drinkUntil ? ` · jusqu'en ${w.drinkUntil}` : ''}</small>

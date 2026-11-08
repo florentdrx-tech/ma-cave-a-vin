@@ -4,6 +4,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { addBottles, COLORS, db, deleteWine, drinkStatus, wineTitle } from '../db';
 import { ColorDot, Modal, Stars, StatusBadge, Stepper, fmtDate, fmtMoney } from '../components/ui';
 import DrinkModal from '../components/DrinkModal';
+import Bottle from '../components/Bottle';
+import LabelPicker from '../components/LabelPicker';
 
 export default function WineDetail() {
   const id = Number(useParams().id);
@@ -16,6 +18,8 @@ export default function WineDetail() {
   const [drink, setDrink] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addQty, setAddQty] = useState(6);
+  const [picker, setPicker] = useState(false);
+  const [showPhoto, setShowPhoto] = useState(false);
 
   if (wine === undefined) return null;
   if (!wine) return <p>Ce vin n'existe plus. <Link to="/vins">Retour</Link></p>;
@@ -34,7 +38,13 @@ export default function WineDetail() {
   return (
     <div className="stack">
       <div className="detail-head">
-        {wine.photo && <img className="label-photo" src={wine.photo} alt="Étiquette" />}
+        <div className="detail-bottle">
+          <button className="bottle-preview" onClick={() => setPicker(true)} aria-label="Changer l'image de l'étiquette">
+            <Bottle wine={wine} height={230} />
+          </button>
+          <button className="link-btn small" onClick={() => setPicker(true)}>Changer l'étiquette</button>
+          {wine.photo && <button className="link-btn small" onClick={() => setShowPhoto(true)}>Voir ma photo</button>}
+        </div>
         <div>
           <p className="muted"><ColorDot color={wine.color} /> {COLORS.find((c) => c.value === wine.color)?.label} · {wine.size} cl</p>
           <h1>{wine.producer || wine.appellation}</h1>
@@ -144,6 +154,19 @@ export default function WineDetail() {
       </div>
 
       {drink && <DrinkModal wine={wine} onClose={() => setDrink(false)} />}
+      {picker && (
+        <LabelPicker
+          initialQuery={[wine.producer, wine.name, wine.appellation].filter(Boolean).join(' ')}
+          photo={wine.photo}
+          onPick={(img) => db.wines.update(id, { labelImage: img, updatedAt: Date.now() })}
+          onClose={() => setPicker(false)}
+        />
+      )}
+      {showPhoto && wine.photo && (
+        <Modal title="Ma photo" onClose={() => setShowPhoto(false)}>
+          <img src={wine.photo} alt="Photo de l'étiquette" style={{ width: '100%', borderRadius: 12 }} />
+        </Modal>
+      )}
       {adding && (
         <Modal title="Ajouter des bouteilles" onClose={() => setAdding(false)}>
           <Stepper value={addQty} onChange={setAddQty} min={1} />

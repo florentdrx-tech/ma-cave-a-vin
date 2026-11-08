@@ -8,6 +8,12 @@ Les données restent sur votre appareil.
 - **Inventaire** : domaine, cuvée, appellation, région, couleur, millésime, contenance, prix, fournisseur, cépages, photo d'étiquette
 - **Saisie rapide** : seuls le domaine (ou l'appellation) et la couleur sont nécessaires. Autocomplétion à partir des vins déjà saisis,
   « Enregistrer + autre » pour enchaîner les millésimes, « Autre millésime » depuis une fiche, boutons −/+ directement dans la liste
+- **Scan des étiquettes** : prenez l'étiquette en photo, les champs se remplissent tout seuls.
+  Par défaut, le texte est lu sur l'appareil (Tesseract, gratuit). Pour une lecture bien plus fiable, vous pouvez ajouter votre clé d'API
+  Anthropic dans ⚙️ Réglages : la photo est alors lue par Claude, à environ un centime l'étiquette, sans abonnement
+- **Vue « Bouteilles »** : chaque vin est dessiné sous forme de bouteille (forme selon la région, teinte selon la couleur), avec soit une
+  image d'étiquette trouvée sur internet (Open Food Facts, Wikimedia Commons, ou une adresse d'image collée depuis Google Images), soit votre photo,
+  soit une étiquette dessinée automatiquement à partir de la fiche
 - **Casiers** : plan visuel de chaque casier (rangées × colonnes, avec plusieurs bouteilles par case pour le vrac), rangement en touchant les cases,
   déplacement, surlignage d'un vin dans le plan
 - **Apogée** : fenêtre de dégustation (avec estimation indicative selon la couleur), statuts « À garder / À boire / À boire vite / Dépassée »,
@@ -38,7 +44,7 @@ npm run dev      # http://localhost:5173
 npm run build    # build de production dans dist/
 ```
 
-Stack : React 18, TypeScript, Vite, Dexie (IndexedDB), vite-plugin-pwa.
+Stack : React 18, TypeScript, Vite, Dexie (IndexedDB), vite-plugin-pwa, tesseract.js, SDK Anthropic.
 
 ## Mise en ligne (GitHub Pages)
 

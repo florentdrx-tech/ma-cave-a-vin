@@ -3,12 +3,16 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, download, exportCSV, exportJSON, importJSON } from '../db';
 import { FIELD_LABELS, guessMapping, importWines, parseCSV, rowsToWines } from '../csvImport';
 import { Modal } from '../components/ui';
+import { AI_MODELS, getAiModel, getApiKey, setAiModel, setApiKey } from '../labelScan';
 
 export default function Settings() {
   const counts = useLiveQuery(async () => ({ wines: await db.wines.count(), tastings: await db.tastings.count(), readings: await db.readings.count() }), []);
   const [msg, setMsg] = useState<string>();
   const [csv, setCsv] = useState<{ header: string[]; rows: string[][]; mapping: Record<number, string> }>();
   const stamp = new Date().toISOString().slice(0, 10);
+  const [key, setKey] = useState(getApiKey);
+  const [model, setModel] = useState(getAiModel);
+  const [showKey, setShowKey] = useState(false);
 
   async function onJSON(file?: File) {
     if (!file) return;
@@ -51,6 +55,36 @@ export default function Settings() {
         <div className="actions wrap">
           <button className="btn primary" onClick={async () => download(`ma-cave-${stamp}.json`, await exportJSON(), 'application/json')}>💾 Sauvegarde complète (JSON)</button>
           <button className="btn ghost" onClick={async () => download(`ma-cave-${stamp}.csv`, await exportCSV(), 'text/csv;charset=utf-8')}>Exporter l'inventaire (CSV / Excel)</button>
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>Lecture des étiquettes</h2>
+        <p className="muted small">
+          Sans réglage, le texte de l'étiquette est lu directement sur votre appareil : c'est gratuit, mais peu fiable sur les étiquettes
+          très graphiques.
+        </p>
+        <p className="muted small">
+          Pour une lecture bien plus précise, vous pouvez utiliser l'IA Claude avec votre propre clé d'API, à créer sur console.anthropic.com.
+          Vous ne payez que ce que vous utilisez, sans abonnement : de l'ordre d'un centime par étiquette avec le modèle le plus précis,
+          beaucoup moins avec Haiku. La clé reste sur cet appareil et la photo n'est envoyée qu'à Anthropic, au moment du scan.
+        </p>
+        <label className="field">
+          <span>Clé d'API Anthropic</span>
+          <div className="row">
+            <input type={showKey ? 'text' : 'password'} value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-ant-…" autoComplete="off" />
+            <button className="btn ghost" type="button" onClick={() => setShowKey(!showKey)}>{showKey ? 'Masquer' : 'Voir'}</button>
+          </div>
+        </label>
+        <label className="field">
+          <span>Modèle</span>
+          <select value={model} onChange={(e) => setModel(e.target.value)}>
+            {AI_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+          </select>
+        </label>
+        <div className="actions wrap">
+          <button className="btn primary" onClick={() => { setApiKey(key); setAiModel(model); setMsg(key.trim() ? 'Lecture par IA activée ✓' : 'Lecture par IA désactivée.'); }}>Enregistrer</button>
+          {getApiKey() && <button className="btn ghost" onClick={() => { setApiKey(''); setKey(''); setMsg('Clé supprimée.'); }}>Supprimer la clé</button>}
         </div>
       </section>
 

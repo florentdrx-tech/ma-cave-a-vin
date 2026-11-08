@@ -4,6 +4,16 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { addBottles, COLORS, db, drinkStatus, STATUS_LABEL, wineTitle, type DrinkStatus, type Wine, type WineColor } from '../db';
 import { ColorDot, Empty, StatusBadge } from '../components/ui';
 import DrinkModal from '../components/DrinkModal';
+import Bottle from '../components/Bottle';
+
+type View = 'liste' | 'bouteilles';
+function loadView(): View {
+  try {
+    return localStorage.getItem('cave.view') === 'bouteilles' ? 'bouteilles' : 'liste';
+  } catch {
+    return 'liste';
+  }
+}
 
 type Sort = 'producer' | 'vintage' | 'drink' | 'recent';
 
@@ -20,6 +30,11 @@ export default function Wines() {
   const [sort, setSort] = useState<Sort>('producer');
   const [showEmpty, setShowEmpty] = useState(false);
   const [drinking, setDrinking] = useState<Wine>();
+  const [view, setViewState] = useState<View>(loadView);
+  const setView = (v: View) => {
+    setViewState(v);
+    try { localStorage.setItem('cave.view', v); } catch { /* ignoré */ }
+  };
 
   const placedCount = useMemo(() => {
     const m = new Map<number, number>();
@@ -76,10 +91,27 @@ export default function Wines() {
         </select>
         <label className="check"><input type="checkbox" checked={showEmpty} onChange={(e) => setShowEmpty(e.target.checked)} /> Épuisés</label>
       </div>
-      <p className="muted small">{list.length} référence{list.length > 1 ? 's' : ''} · {total} bouteille{total > 1 ? 's' : ''}</p>
+      <div className="row between">
+        <p className="muted small">{list.length} référence{list.length > 1 ? 's' : ''} · {total} bouteille{total > 1 ? 's' : ''}</p>
+        <div className="segmented" role="group" aria-label="Affichage">
+          <button className={view === 'liste' ? 'on' : ''} onClick={() => setView('liste')}>☰ Liste</button>
+          <button className={view === 'bouteilles' ? 'on' : ''} onClick={() => setView('bouteilles')}>🍾 Bouteilles</button>
+        </div>
+      </div>
 
       {list.length === 0 ? (
         <Empty>{wines.length === 0 ? <>Aucun vin pour l'instant. <Link to="/vin/nouveau">Ajouter un vin</Link></> : 'Aucun vin ne correspond.'}</Empty>
+      ) : view === 'bouteilles' ? (
+        <div className="shelf">
+          {list.map((w) => (
+            <Link key={w.id} to={`/vin/${w.id}`} className={`shelf-item ${w.quantity <= 0 ? 'faded' : ''}`}>
+              <span className="shelf-qty">×{w.quantity}</span>
+              <Bottle wine={w} height={170} />
+              <b>{w.producer || w.appellation}</b>
+              <small className="muted">{[w.name, w.vintage ?? 'NM'].filter(Boolean).join(' · ')}</small>
+            </Link>
+          ))}
+        </div>
       ) : (
         <ul className="list">
           {list.map((w) => {
@@ -87,7 +119,7 @@ export default function Wines() {
             return (
               <li key={w.id} className={w.quantity <= 0 ? 'faded' : ''}>
                 <Link to={`/vin/${w.id}`} className="row">
-                  {w.photo ? <img className="thumb" src={w.photo} alt="" /> : <ColorDot color={w.color} size={14} />}
+                  <Bottle wine={w} height={56} className="mini" />
                   <span className="grow">
                     <b>{wineTitle(w)}</b>
                     <small className="muted">
