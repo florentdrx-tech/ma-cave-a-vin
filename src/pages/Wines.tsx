@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { addBottles, COLORS, db, drinkStatus, STATUS_LABEL, wineTitle, type DrinkStatus, type Wine, type WineColor } from '../db';
+import { addBottles, COLORS, db, drinkStatus, drinkWindow, STATUS_LABEL, wineTitle, type DrinkStatus, type Wine, type WineColor } from '../db';
 import { ColorDot, Empty, StatusBadge } from '../components/ui';
 import DrinkModal from '../components/DrinkModal';
 import Bottle from '../components/Bottle';
+import { DISHES, effectiveAdvice, serveSentence, decantSentence, type DishId } from '../advice';
 
 type View = 'liste' | 'bouteilles';
 function loadView(): View {
@@ -24,6 +25,9 @@ function norm(s: string) {
 export default function Wines() {
   const wines = useLiveQuery(() => db.wines.toArray(), []);
   const placements = useLiveQuery(() => db.placements.toArray(), []);
+  const [params, setParams] = useSearchParams();
+  const dish = params.get('plat') as DishId | null;
+  const dishInfo = DISHES.find((d) => d.id === dish);
   const [q, setQ] = useState('');
   const [color, setColor] = useState<WineColor | ''>('');
   const [status, setStatus] = useState<DrinkStatus | ''>('');
@@ -49,6 +53,7 @@ export default function Wines() {
       if (!showEmpty && w.quantity <= 0) return false;
       if (color && w.color !== color) return false;
       if (status && drinkStatus(w) !== status) return false;
+      if (dish && !effectiveAdvice(w).dishes.includes(dish)) return false;
       if (nq) {
         const hay = norm([w.producer, w.name, w.appellation, w.region, w.vintage, w.grapes, w.supplier].join(' '));
         return nq.split(/\s+/).every((t) => hay.includes(t));
@@ -58,17 +63,29 @@ export default function Wines() {
     const cmp: Record<Sort, (a: Wine, b: Wine) => number> = {
       producer: (a, b) => wineTitle(a).localeCompare(wineTitle(b), 'fr'),
       vintage: (a, b) => (a.vintage ?? 0) - (b.vintage ?? 0),
-      drink: (a, b) => (a.drinkUntil ?? 9999) - (b.drinkUntil ?? 9999),
+      drink: (a, b) => (drinkWindow(a).until ?? 9999) - (drinkWindow(b).until ?? 9999),
       recent: (a, b) => b.updatedAt - a.updatedAt,
     };
-    return res.sort(cmp[sort]);
-  }, [wines, q, color, status, sort, showEmpty]);
+    res.sort(cmp[sort]);
+    if (dish) {
+      // Pour un accord : d'abord les vins à leur apogée, puis ceux à boire vite, puis les autres
+      const rank = { apogee: 0, urgent: 1, passe: 2, inconnu: 3, jeune: 4 } as const;
+      res.sort((a, b) => rank[drinkStatus(a)] - rank[drinkStatus(b)]);
+    }
+    return res;
+  }, [wines, q, color, status, sort, showEmpty, dish]);
 
   if (!wines) return null;
   const total = list.reduce((s, w) => s + w.quantity, 0);
 
   return (
     <div className="stack">
+      {dishInfo && (
+        <div className="banner">
+          <span>Vins pour accompagner : <b>{dishInfo.emoji} {dishInfo.label}</b></span>
+          <button className="link-btn" onClick={() => setParams({})}>✕ Retirer</button>
+        </div>
+      )}
       <input className="search" type="search" placeholder="Rechercher (domaine, appellation, millésime…)" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="chips scroll">
         <button className={`chip ${color === '' ? 'on' : ''}`} onClick={() => setColor('')}>Toutes</button>
@@ -127,6 +144,10 @@ export default function Wines() {
                       {unplaced > 0 && placedCount.size > 0 ? ` · ${unplaced} non rangée${unplaced > 1 ? 's' : ''}` : ''}
                     </small>
                     <StatusBadge wine={w} />
+                    {dish && (() => {
+                      const ad = effectiveAdvice(w);
+                      return <small className="muted">🌡️ {serveSentence(ad.serveMin, ad.serveMax)} · {decantSentence(ad.decant, ad.aeration).split(' :')[0]}</small>;
+                    })()}
                   </span>
                 </Link>
                 <div className="quick">

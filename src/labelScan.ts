@@ -1,4 +1,5 @@
-import type { WineColor } from './db';
+import type { Wine, WineColor } from './db';
+import type { Advice, Decant } from './advice';
 import { APPELLATIONS, GRAPES, norm, squash } from './appellations';
 
 /** Informations lues sur une étiquette. Les champs absents n'ont pas été reconnus. */
@@ -11,6 +12,9 @@ export interface LabelInfo {
   vintage?: number;
   size?: number;
   grapes?: string;
+  advice?: Advice;
+  drinkFrom?: number;
+  drinkUntil?: number;
 }
 
 /* ---------- Réglages de la lecture par IA (stockés sur l'appareil) ---------- */
@@ -63,15 +67,82 @@ export async function scanLabel(
   return { info: parseLabelText(text, knownProducers), mode: 'ocr', rawText: text };
 }
 
-/* ---------- Lecture par l'IA (Claude), avec la clé de l'utilisateur ---------- */
+/* ---------- IA (Claude), avec la clé de l'utilisateur ---------- */
 
-async function aiScan(image: string, apiKey: string, model: string): Promise<LabelInfo> {
+const SOMMELIER =
+  "Pour les conseils de service, réponds en sommelier français, de façon concise et concrète. " +
+  "Base-toi sur ce que tu sais de ce domaine, de cette cuvée et de ce millésime ; à défaut, sur le style de l'appellation. " +
+  "description : 2 ou 3 phrases sur le style et les arômes. pairings : 3 à 5 accords précis, séparés par des virgules. " +
+  "decant : 'non' (servir directement), 'ouvrir' (déboucher à l'avance), 'carafer' (aérer en carafe), " +
+  "'decanter' (vieux vin à séparer de son dépôt). aeration_minutes : délai avant le service, ou null. " +
+  "serve_min / serve_max : température de service en °C. drink_from / drink_until : années de l'apogée, ou null si non millésimé.";
+
+async function loadAi() {
   const [{ default: Anthropic }, { zodOutputFormat }, { z }] = await Promise.all([
     import('@anthropic-ai/sdk'),
     import('@anthropic-ai/sdk/helpers/zod'),
     import('zod'),
   ]);
+  const adviceShape = {
+    description: z.string(),
+    pairings: z.string(),
+    decant: z.enum(['non', 'ouvrir', 'carafer', 'decanter']),
+    aeration_minutes: z.number().int().nullable(),
+    serve_min: z.number().int(),
+    serve_max: z.number().int(),
+    drink_from: z.number().int().nullable(),
+    drink_until: z.number().int().nullable(),
+  };
+  return { Anthropic, zodOutputFormat, z, adviceShape };
+}
 
+type AiAdviceOut = {
+  description: string; pairings: string; decant: Decant; aeration_minutes: number | null;
+  serve_min: number; serve_max: number; drink_from: number | null; drink_until: number | null;
+};
+
+function toAdvice(p: AiAdviceOut): Pick<LabelInfo, 'advice' | 'drinkFrom' | 'drinkUntil'> {
+  const lo = Math.min(p.serve_min, p.serve_max);
+  const hi = Math.max(p.serve_min, p.serve_max);
+  return {
+    advice: {
+      description: p.description || undefined,
+      pairings: p.pairings || undefined,
+      decant: p.decant,
+      aeration: p.decant === 'ouvrir' || p.decant === 'carafer' ? p.aeration_minutes ?? undefined : undefined,
+      serveMin: lo,
+      serveMax: hi,
+      source: 'ia',
+    },
+    drinkFrom: p.drink_from ?? undefined,
+    drinkUntil: p.drink_until ?? undefined,
+  };
+}
+
+async function callClaude<T>(content: unknown[], schema: unknown, apiKey: string, model: string): Promise<T> {
+  const { Anthropic, zodOutputFormat } = await loadAi();
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+  try {
+    const response = await client.messages.parse({
+      model,
+      max_tokens: 4000,
+      output_config: { format: zodOutputFormat(schema as never), effort: 'low' },
+      messages: [{ role: 'user', content: content as never }],
+    });
+    if (response.stop_reason === 'refusal') throw new Error("L'IA n'a pas pu répondre à cette demande.");
+    if (!response.parsed_output) throw new Error("Réponse de l'IA illisible.");
+    return response.parsed_output as T;
+  } catch (e) {
+    if (e instanceof Anthropic.AuthenticationError) throw new Error('Clé API refusée : vérifiez-la dans ⚙️ Réglages.');
+    if (e instanceof Anthropic.RateLimitError) throw new Error('Trop de demandes, réessayez dans un instant.');
+    if (e instanceof Anthropic.APIConnectionError) throw new Error('Pas de connexion internet.');
+    if (e instanceof Anthropic.APIError) throw new Error(`Erreur du service (${e.status}) : ${e.message}`);
+    throw e;
+  }
+}
+
+async function aiScan(image: string, apiKey: string, model: string): Promise<LabelInfo> {
+  const { z, adviceShape } = await loadAi();
   const Schema = z.object({
     producer: z.string().describe('Domaine, château ou maison. Chaîne vide si absent.'),
     name: z.string().describe('Nom de la cuvée, sans le domaine ni l\'appellation. Chaîne vide si absent.'),
@@ -80,54 +151,62 @@ async function aiScan(image: string, apiKey: string, model: string): Promise<Lab
     color: z.enum(['rouge', 'blanc', 'rose', 'effervescent', 'liquoreux', '']),
     vintage: z.number().int().nullable().describe('Millésime, ou null si non millésimé ou illisible.'),
     size_cl: z.number().nullable().describe('Contenance en centilitres, ou null.'),
-    grapes: z.string().describe('Cépages mentionnés, séparés par des virgules. Chaîne vide si absent.'),
+    grapes: z.string().describe('Cépages, séparés par des virgules. Chaîne vide si inconnus.'),
+    ...adviceShape,
   });
 
   const media = image.match(/^data:(image\/[a-z+]+);base64,/)?.[1] ?? 'image/jpeg';
   const data = image.replace(/^data:[^,]+,/, '');
+  const p = await callClaude<AiAdviceOut & { producer: string; name: string; appellation: string; region: string; color: string; vintage: number | null; size_cl: number | null; grapes: string }>(
+    [
+      { type: 'image', source: { type: 'base64', media_type: media, data } },
+      {
+        type: 'text',
+        text:
+          "Voici la photo d'une étiquette de vin. Relève les informations qui y figurent. " +
+          "N'invente rien pour l'identité du vin : laisse vide ce qui n'est pas lisible. Tu peux déduire la région et la couleur de l'appellation. " +
+          SOMMELIER,
+      },
+    ],
+    Schema,
+    apiKey,
+    model,
+  );
+  return {
+    producer: p.producer || undefined,
+    name: p.name || undefined,
+    appellation: p.appellation || undefined,
+    region: p.region || undefined,
+    color: (p.color || undefined) as WineColor | undefined,
+    vintage: p.vintage ?? undefined,
+    size: p.size_cl ?? undefined,
+    grapes: p.grapes || undefined,
+    ...toAdvice(p),
+  };
+}
 
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
-  try {
-    const response = await client.messages.parse({
-      model,
-      max_tokens: 4000,
-      output_config: { format: zodOutputFormat(Schema), effort: 'low' },
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: media as 'image/jpeg', data } },
-            {
-              type: 'text',
-              text:
-                "Voici la photo d'une étiquette de vin. Relève les informations qui y figurent. " +
-                "N'invente rien : laisse vide ce qui n'est pas lisible. Tu peux déduire la région et la couleur de l'appellation " +
-                "quand elles ne sont pas écrites.",
-            },
-          ],
-        },
-      ],
-    });
-    if (response.stop_reason === 'refusal') throw new Error("L'IA n'a pas pu analyser cette image.");
-    const p = response.parsed_output;
-    if (!p) throw new Error("Réponse de l'IA illisible.");
-    return {
-      producer: p.producer || undefined,
-      name: p.name || undefined,
-      appellation: p.appellation || undefined,
-      region: p.region || undefined,
-      color: (p.color || undefined) as WineColor | undefined,
-      vintage: p.vintage ?? undefined,
-      size: p.size_cl ?? undefined,
-      grapes: p.grapes || undefined,
-    };
-  } catch (e) {
-    if (e instanceof Anthropic.AuthenticationError) throw new Error('Clé API refusée : vérifiez-la dans ⚙️ Réglages.');
-    if (e instanceof Anthropic.RateLimitError) throw new Error('Trop de demandes, réessayez dans un instant.');
-    if (e instanceof Anthropic.APIConnectionError) throw new Error('Pas de connexion internet.');
-    if (e instanceof Anthropic.APIError) throw new Error(`Erreur du service (${e.status}) : ${e.message}`);
-    throw e;
-  }
+/** Conseils de service personnalisés pour un vin déjà enregistré. */
+export async function aiAdvice(w: Wine) {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error('Ajoutez une clé d\'API dans ⚙️ Réglages pour utiliser l\'IA.');
+  const { z, adviceShape } = await loadAi();
+  const desc = [
+    `Domaine : ${w.producer || 'inconnu'}`,
+    w.name && `Cuvée : ${w.name}`,
+    `Appellation : ${w.appellation || 'inconnue'}`,
+    w.region && `Région : ${w.region}`,
+    `Couleur : ${w.color}`,
+    `Millésime : ${w.vintage ?? 'non millésimé'}`,
+    w.grapes && `Cépages : ${w.grapes}`,
+    `Contenance : ${w.size} cl`,
+  ].filter(Boolean).join('\n');
+  const p = await callClaude<AiAdviceOut>(
+    [{ type: 'text', text: `Vin de ma cave (nous sommes en ${new Date().getFullYear()}) :\n${desc}\n\n${SOMMELIER}` }],
+    z.object(adviceShape),
+    apiKey,
+    getAiModel(),
+  );
+  return toAdvice(p);
 }
 
 /* ---------- Lecture du texte directement sur l'appareil (gratuit) ---------- */

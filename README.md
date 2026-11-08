@@ -14,6 +14,9 @@ Les données restent sur votre appareil.
 - **Vue « Bouteilles »** : chaque vin est dessiné sous forme de bouteille (forme selon la région, teinte selon la couleur), avec soit une
   image d'étiquette trouvée sur internet (Open Food Facts, Wikimedia Commons, ou une adresse d'image collée depuis Google Images), soit votre photo,
   soit une étiquette dessinée automatiquement à partir de la fiche
+- **Conseils de service** sur chaque fiche : quand le boire (apogée estimée selon l'appellation et le millésime), température de service,
+  carafe ou non (et combien de temps avant), accords mets-vin et description. Estimés automatiquement, personnalisables par l'IA ou à la main.
+  « Quel vin pour ce soir ? » sur l'accueil retrouve dans la cave les vins qui vont avec un plat
 - **Casiers** : plan visuel de chaque casier (rangées × colonnes, avec plusieurs bouteilles par case pour le vrac), rangement en touchant les cases,
   déplacement, surlignage d'un vin dans le plan
 - **Apogée** : fenêtre de dégustation (avec estimation indicative selon la couleur), statuts « À garder / À boire / À boire vite / Dépassée »,

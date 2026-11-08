@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { db, drinkBottle, wineTitle, type Wine } from '../db';
 import { Modal, Stars } from './ui';
+import { decantSentence, effectiveAdvice, serveSentence } from '../advice';
 
 /** Sortie d'une bouteille + note de dégustation facultative, en une seule étape. */
 export default function DrinkModal({ wine, placementId, onClose }: { wine: Wine; placementId?: number; onClose: () => void }) {
@@ -22,6 +23,16 @@ export default function DrinkModal({ wine, placementId, onClose }: { wine: Wine;
       <p className="muted">
         {wineTitle(wine)} {wine.vintage ?? ''} · reste {wine.quantity - 1} après sortie
       </p>
+      {(() => {
+        const a = effectiveAdvice(wine);
+        return (
+          <div className="service-tip">
+            <span>🌡️ Température de service : <b>{serveSentence(a.serveMin, a.serveMax)}</b></span>
+            <span>🫗 {decantSentence(a.decant, a.aeration)}</span>
+            <span>🍽️ {a.pairings}</span>
+          </div>
+        );
+      })()}
       <div className="chips">
         {(['Bue', 'Offerte', 'Cassée / bouchonnée'] as const).map((r) => (
           <button key={r} type="button" className={`chip ${reason === r ? 'on' : ''}`} onClick={() => setReason(r)}>

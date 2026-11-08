@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie';
+import { decantSentence, effectiveAdvice, estimateWindow, serveSentence, type Advice } from './advice';
 
 export type WineColor = 'rouge' | 'blanc' | 'rose' | 'effervescent' | 'liquoreux';
 
@@ -28,6 +29,7 @@ export interface Wine {
   notes?: string;
   photo?: string; // photo prise avec l'appareil (miniature dataURL)
   labelImage?: string; // image d'étiquette affichée sur la bouteille (dataURL ou adresse web)
+  advice?: Advice; // conseils de service (description, accords, carafe, température)
   createdAt: number;
   updatedAt: number;
 }
@@ -167,11 +169,18 @@ export async function deleteRack(rackId: number) {
 
 export type DrinkStatus = 'jeune' | 'apogee' | 'urgent' | 'passe' | 'inconnu';
 
+/** Fenêtre d'apogée : celle saisie, sinon l'estimation selon l'appellation et le millésime. */
+export function drinkWindow(w: Wine): { from?: number; until?: number; estimated: boolean } {
+  if (w.drinkFrom || w.drinkUntil) return { from: w.drinkFrom, until: w.drinkUntil, estimated: false };
+  return { ...estimateWindow(w), estimated: true };
+}
+
 export function drinkStatus(w: Wine, year = new Date().getFullYear()): DrinkStatus {
-  if (!w.drinkFrom && !w.drinkUntil) return 'inconnu';
-  if (w.drinkUntil && year > w.drinkUntil) return 'passe';
-  if (w.drinkFrom && year < w.drinkFrom) return 'jeune';
-  if (w.drinkUntil && w.drinkUntil - year <= 1) return 'urgent';
+  const { from, until } = drinkWindow(w);
+  if (!from && !until) return 'inconnu';
+  if (until && year > until) return 'passe';
+  if (from && year < from) return 'jeune';
+  if (until && until - year <= 1) return 'urgent';
   return 'apogee';
 }
 
@@ -235,10 +244,14 @@ function csvCell(v: unknown): string {
 
 export async function exportCSV(): Promise<string> {
   const wines = await db.wines.toArray();
-  const head = ['Domaine', 'Cuvée', 'Appellation', 'Région', 'Couleur', 'Millésime', 'Contenance (cl)', 'Quantité', 'Prix', 'Fournisseur', 'Apogée début', 'Apogée fin', 'Cépages', 'Notes'];
-  const rows = wines.map((w) =>
-    [w.producer, w.name, w.appellation, w.region, w.color, w.vintage, w.size, w.quantity, w.price, w.supplier, w.drinkFrom, w.drinkUntil, w.grapes, w.notes].map(csvCell).join(';'),
-  );
+  const head = ['Domaine', 'Cuvée', 'Appellation', 'Région', 'Couleur', 'Millésime', 'Contenance (cl)', 'Quantité', 'Prix', 'Fournisseur', 'Apogée début', 'Apogée fin', 'Cépages', 'Notes',
+    'Description', 'Accords', 'Température de service', 'Carafe'];
+  const rows = wines.map((w) => {
+    const a = effectiveAdvice(w);
+    const win = drinkWindow(w);
+    return [w.producer, w.name, w.appellation, w.region, w.color, w.vintage, w.size, w.quantity, w.price, w.supplier, win.from, win.until, w.grapes, w.notes,
+      a.description, a.pairings, serveSentence(a.serveMin, a.serveMax), decantSentence(a.decant, a.aeration)].map(csvCell).join(';');
+  });
   return '﻿' + [head.join(';'), ...rows].join('\n');
 }
 

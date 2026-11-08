@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { COLORS, db, resizeImage, saveWine, suggestWindow, type Wine, type WineColor } from '../db';
+import { COLORS, db, resizeImage, saveWine, type Wine, type WineColor } from '../db';
+import { estimateWindow } from '../advice';
 import { ColorDot, Stepper } from '../components/ui';
 import Bottle from '../components/Bottle';
 import LabelPicker from '../components/LabelPicker';
@@ -56,7 +57,7 @@ export default function WineForm() {
       if (id) setW(x);
       else {
         const { id: _omit, photo: _p, ...rest } = x;
-        setW({ ...rest, quantity: 1, vintage: undefined, drinkFrom: undefined, drinkUntil: undefined });
+        setW({ ...rest, quantity: 1, vintage: undefined, drinkFrom: undefined, drinkUntil: undefined, advice: undefined });
       }
       if (x.drinkFrom || x.supplier || x.grapes || x.notes) setMore(true);
     });
@@ -90,7 +91,7 @@ export default function WineForm() {
     }));
   }
 
-  const suggestion = suggestWindow(w.color, w.vintage);
+  const suggestion = estimateWindow(w);
 
   async function submit(e: FormEvent, again = false) {
     e.preventDefault();
@@ -129,9 +130,9 @@ export default function WineForm() {
         region: info.region ?? known?.region,
         color: info.color ?? known?.color,
       };
-      const labels: Record<keyof LabelInfo, string> = {
+      const labels: Partial<Record<keyof LabelInfo, string>> = {
         producer: 'domaine', name: 'cuvée', appellation: 'appellation', region: 'région', color: 'couleur',
-        vintage: 'millésime', size: 'contenance', grapes: 'cépages',
+        vintage: 'millésime', size: 'contenance', grapes: 'cépages', advice: 'conseils de service', drinkFrom: 'apogée',
       };
       const found = (Object.keys(labels) as (keyof LabelInfo)[]).filter((k) => merged[k] !== undefined && merged[k] !== '');
       setW((p) => ({
@@ -144,6 +145,9 @@ export default function WineForm() {
         vintage: merged.vintage ?? p.vintage,
         size: merged.size ?? p.size,
         grapes: merged.grapes ?? p.grapes,
+        advice: merged.advice ?? p.advice,
+        drinkFrom: merged.drinkFrom ?? p.drinkFrom,
+        drinkUntil: merged.drinkUntil ?? p.drinkUntil,
       }));
       if (found.length === 0) {
         setScanResult({ ok: false, text: "Aucune information reconnue. Essayez une photo plus nette, bien de face et éclairée, ou complétez à la main." });
@@ -250,7 +254,7 @@ export default function WineForm() {
           </div>
           {suggestion.from && !w.drinkFrom && !w.drinkUntil && (
             <button type="button" className="link-btn" onClick={() => setW((p) => ({ ...p, drinkFrom: suggestion.from, drinkUntil: suggestion.until }))}>
-              Utiliser l'estimation {suggestion.from}–{suggestion.until} (indicative, selon la couleur)
+              Utiliser l'estimation {suggestion.from}–{suggestion.until} (indicative, selon l'appellation)
             </button>
           )}
           <label className="field">

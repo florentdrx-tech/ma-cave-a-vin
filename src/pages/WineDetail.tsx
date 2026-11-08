@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { addBottles, COLORS, db, deleteWine, drinkStatus, wineTitle } from '../db';
-import { ColorDot, Modal, Stars, StatusBadge, Stepper, fmtDate, fmtMoney } from '../components/ui';
+import { addBottles, COLORS, db, deleteWine, wineTitle } from '../db';
+import { ColorDot, Modal, Stars, Stepper, fmtDate, fmtMoney } from '../components/ui';
 import DrinkModal from '../components/DrinkModal';
 import Bottle from '../components/Bottle';
 import LabelPicker from '../components/LabelPicker';
+import AdviceCard from '../components/AdviceCard';
 
 export default function WineDetail() {
   const id = Number(useParams().id);
@@ -24,8 +25,6 @@ export default function WineDetail() {
   if (wine === undefined) return null;
   if (!wine) return <p>Ce vin n'existe plus. <Link to="/vins">Retour</Link></p>;
 
-  const status = drinkStatus(wine);
-  const year = new Date().getFullYear();
   const unplaced = wine.quantity - (placements?.length ?? 0);
 
   async function remove() {
@@ -65,33 +64,7 @@ export default function WineDetail() {
         </div>
       </section>
 
-      <section className="card">
-        <h2>Apogée</h2>
-        {wine.drinkFrom || wine.drinkUntil ? (
-          <>
-            <StatusBadge wine={wine} />
-            <div className="timeline">
-              {(() => {
-                const from = wine.drinkFrom ?? wine.vintage ?? year;
-                const until = wine.drinkUntil ?? from + 5;
-                const start = Math.min(wine.vintage ?? from, from, year) ;
-                const end = Math.max(until, year) + 1;
-                const pct = (y: number) => ((y - start) / (end - start)) * 100;
-                return (
-                  <>
-                    <div className={`window ${status}`} style={{ left: `${pct(from)}%`, width: `${pct(until + 1) - pct(from)}%` }} />
-                    <div className="now" style={{ left: `${pct(year + 0.5)}%` }} title="Aujourd'hui" />
-                    <span className="tl-label" style={{ left: `${pct(from)}%` }}>{from}</span>
-                    <span className="tl-label" style={{ left: `${pct(until + 1)}%` }}>{until}</span>
-                  </>
-                );
-              })()}
-            </div>
-          </>
-        ) : (
-          <p className="muted">Non renseignée. <Link to={`/vin/${id}/modifier`}>Ajouter une fenêtre de dégustation</Link></p>
-        )}
-      </section>
+      <AdviceCard wine={wine} />
 
       <section className="card">
         <h2>Emplacement</h2>

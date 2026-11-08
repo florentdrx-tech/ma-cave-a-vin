@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { COLORS, db, drinkStatus, wineTitle } from '../db';
+import { COLORS, db, drinkStatus, drinkWindow, wineTitle } from '../db';
+import { DISHES, effectiveAdvice } from '../advice';
 import { ColorDot, Empty, StatusBadge, fmtMoney, fmtTemp } from '../components/ui';
 import { tempLevel, humLevel } from '../thermometer';
 import Bottle from '../components/Bottle';
@@ -18,7 +19,7 @@ export default function Home() {
   const year = new Date().getFullYear();
   const toDrink = wines
     .filter((w) => ['urgent', 'passe', 'apogee'].includes(drinkStatus(w, year)))
-    .sort((a, b) => (a.drinkUntil ?? 9999) - (b.drinkUntil ?? 9999))
+    .sort((a, b) => (drinkWindow(a).until ?? 9999) - (drinkWindow(b).until ?? 9999))
     .slice(0, 8);
 
   const temp = thermo.live?.temp ?? lastReading?.temp;
@@ -69,6 +70,15 @@ export default function Home() {
       </Link>
 
       <section>
+        <h2>Quel vin pour ce soir ?</h2>
+        <div className="chips scroll">
+          {DISHES.filter((d) => wines.some((w) => effectiveAdvice(w).dishes.includes(d.id))).map((d) => (
+            <Link key={d.id} className="chip" to={`/vins?plat=${d.id}`}>{d.emoji} {d.label}</Link>
+          ))}
+        </div>
+      </section>
+
+      <section>
         <h2>À boire en priorité</h2>
         {toDrink.length === 0 ? (
           <p className="muted">Rien d'urgent. Renseignez l'apogée de vos vins pour être prévenu au bon moment.</p>
@@ -80,7 +90,7 @@ export default function Home() {
                   <Bottle wine={w} height={48} className="mini" />
                   <span className="grow">
                     <b>{wineTitle(w)}</b>
-                    <small className="muted">{[w.appellation, w.vintage].filter(Boolean).join(' · ')}{w.drinkUntil ? ` · jusqu'en ${w.drinkUntil}` : ''}</small>
+                    <small className="muted">{[w.appellation, w.vintage].filter(Boolean).join(' · ')}{drinkWindow(w).until ? ` · jusqu'en ${drinkWindow(w).until}` : ''}</small>
                   </span>
                   <StatusBadge wine={w} />
                   <span className="qty">×{w.quantity}</span>
