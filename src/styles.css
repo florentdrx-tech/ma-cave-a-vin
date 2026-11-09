@@ -288,3 +288,8 @@ details ol { padding-left: 20px; }
 .spinner.light { border-color: #fff; border-right-color: transparent; width: 14px; height: 14px; }
 .service-tip { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; background: var(--accent-soft); font-size: 0.9rem; }
 a.chip { color: inherit; }
+
+.progress { height: 8px; border-radius: 4px; background: var(--accent-soft); overflow: hidden; margin: 8px 0; }
+.progress > div { height: 100%; background: var(--accent); transition: width 0.3s; }
+.bulk .btn { margin-top: 8px; }
+.banner.small { display: block; font-size: 0.85rem; }

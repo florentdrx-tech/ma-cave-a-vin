@@ -94,6 +94,14 @@ class CaveDB extends Dexie {
       tastings: '++id, wineId, date',
       readings: '++id, date',
     });
+    this.version(2).upgrade((tx) =>
+      tx.table('wines').toCollection().modify((w: Wine) => {
+        if (!COLORS.some((c) => c.value === w.color)) {
+          const n = String(w.color ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+          w.color = /efferv|champ|cremant/.test(n) ? 'effervescent' : /liquor|moelleu/.test(n) ? 'liquoreux' : /rose/.test(n) ? 'rose' : /blanc/.test(n) ? 'blanc' : 'rouge';
+        }
+      }),
+    );
   }
 }
 

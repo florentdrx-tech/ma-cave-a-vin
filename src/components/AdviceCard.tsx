@@ -9,6 +9,7 @@ export default function AdviceCard({ wine }: { wine: Wine }) {
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
+  const [needKey, setNeedKey] = useState(false);
   const a = effectiveAdvice(wine);
   const win = drinkWindow(wine);
   const status = drinkStatus(wine);
@@ -103,19 +104,18 @@ export default function AdviceCard({ wine }: { wine: Wine }) {
 
       {error && <p className="error">{error}</p>}
       <div className="actions wrap">
-        {hasKey ? (
-          <button className="btn primary" disabled={loading} onClick={askAi}>
-            {loading ? <><span className="spinner light" /> L'IA réfléchit…</> : a.source === 'ia' ? '✨ Redemander à l\'IA' : '✨ Conseils personnalisés (IA)'}
-          </button>
-        ) : (
-          <small className="muted">
-            Conseils estimés selon l'appellation et l'âge du vin. Pour des conseils propres à cette cuvée, activez l'IA dans{' '}
-            <Link to="/reglages">⚙️ Réglages</Link>.
-          </small>
-        )}
+        <button className="btn primary" disabled={loading} onClick={() => (hasKey ? askAi() : setNeedKey(true))}>
+          {loading ? <><span className="spinner light" /> L'IA réfléchit…</> : a.source === 'ia' ? '✨ Redemander à l\'IA' : '✨ Analyser avec l\'IA'}
+        </button>
         <button className="btn ghost" onClick={() => setEditing(true)}>✏️ Modifier</button>
       </div>
 
+      {needKey && (
+        <p className="banner small">
+          Pour utiliser l'IA, collez d'abord votre clé d'API Anthropic dans <Link to="/reglages">⚙️ Réglages</Link>, section « Lecture des étiquettes ».
+          Si vous avez installé l'application sur l'écran d'accueil, saisissez la clé depuis l'application installée : sur iPhone, elle ne partage pas ses réglages avec Safari.
+        </p>
+      )}
       {editing && <AdviceEditor wine={wine} onClose={() => setEditing(false)} />}
     </section>
   );

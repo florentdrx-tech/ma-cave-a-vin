@@ -5,6 +5,7 @@ import { addBottles, COLORS, db, drinkStatus, drinkWindow, STATUS_LABEL, wineTit
 import { ColorDot, Empty, StatusBadge } from '../components/ui';
 import DrinkModal from '../components/DrinkModal';
 import Bottle from '../components/Bottle';
+import BulkAnalyze from '../components/BulkAnalyze';
 import { DISHES, effectiveAdvice, serveSentence, decantSentence, type DishId } from '../advice';
 
 type View = 'liste' | 'bouteilles';
@@ -108,6 +109,7 @@ export default function Wines() {
         </select>
         <label className="check"><input type="checkbox" checked={showEmpty} onChange={(e) => setShowEmpty(e.target.checked)} /> Épuisés</label>
       </div>
+      <BulkAnalyze compact />
       <div className="row between">
         <p className="muted small">{list.length} référence{list.length > 1 ? 's' : ''} · {total} bouteille{total > 1 ? 's' : ''}</p>
         <div className="segmented" role="group" aria-label="Affichage">

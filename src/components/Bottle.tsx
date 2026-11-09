@@ -73,7 +73,7 @@ type BottleWine = Pick<Wine, 'color' | 'region' | 'appellation' | 'producer' | '
 export default function Bottle({ wine, height = 160, className = '' }: { wine: BottleWine; height?: number; className?: string }) {
   const uid = useId().replace(/:/g, '');
   const shape = SHAPES[bottleShape(wine.color, wine.region, wine.appellation)];
-  const look = LOOK[wine.color];
+  const look = LOOK[wine.color] ?? LOOK.rouge;
   const { x, y, w, h } = shape.label;
   const style = LABEL_STYLES[hash(wine.producer || wine.appellation || 'x') % LABEL_STYLES.length];
 

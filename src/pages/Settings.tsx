@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, download, exportCSV, exportJSON, importJSON } from '../db';
 import { FIELD_LABELS, guessMapping, importWines, parseCSV, rowsToWines } from '../csvImport';
 import { Modal } from '../components/ui';
+import BulkAnalyze from '../components/BulkAnalyze';
 import { AI_MODELS, getAiModel, getApiKey, setAiModel, setApiKey } from '../labelScan';
 
 export default function Settings() {
@@ -87,6 +88,8 @@ export default function Settings() {
           {getApiKey() && <button className="btn ghost" onClick={() => { setApiKey(''); setKey(''); setMsg('Clé supprimée.'); }}>Supprimer la clé</button>}
         </div>
       </section>
+
+      <BulkAnalyze />
 
       <section className="card">
         <h2>Restaurer une sauvegarde</h2>

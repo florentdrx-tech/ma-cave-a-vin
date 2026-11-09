@@ -86,20 +86,44 @@ async function loadAi() {
   const adviceShape = {
     description: z.string(),
     pairings: z.string(),
-    decant: z.enum(['non', 'ouvrir', 'carafer', 'decanter']),
-    aeration_minutes: z.number().int().nullable(),
-    serve_min: z.number().int(),
-    serve_max: z.number().int(),
-    drink_from: z.number().int().nullable(),
-    drink_until: z.number().int().nullable(),
+    // Valeurs libres : le format imposé ne garantit pas les listes ni les entiers, on normalise ensuite
+    decant: z.string().describe("Une seule valeur parmi : non, ouvrir, carafer, decanter"),
+    aeration_minutes: z.number().nullable(),
+    serve_min: z.number(),
+    serve_max: z.number(),
+    drink_from: z.number().nullable(),
+    drink_until: z.number().nullable(),
   };
   return { Anthropic, zodOutputFormat, z, adviceShape };
 }
 
 type AiAdviceOut = {
-  description: string; pairings: string; decant: Decant; aeration_minutes: number | null;
+  description: string; pairings: string; decant: string; aeration_minutes: number | null;
   serve_min: number; serve_max: number; drink_from: number | null; drink_until: number | null;
 };
+
+/** Le format imposé ne verrouille pas les listes de valeurs : on normalise la réponse. */
+function toColor(v: string): WineColor | undefined {
+  const n = norm(v);
+  if (!n) return undefined;
+  if (/efferv|champ|cremant|mousseu|petill|spark/.test(n)) return 'effervescent';
+  if (/liquor|moelleu|doux|sweet/.test(n)) return 'liquoreux';
+  if (/rose/.test(n)) return 'rose';
+  if (/blanc|white/.test(n)) return 'blanc';
+  if (/rouge|red/.test(n)) return 'rouge';
+  return undefined;
+}
+
+function toDecant(v: string): Decant | undefined {
+  const n = norm(v);
+  if (n.startsWith('decant')) return 'decanter';
+  if (n.startsWith('caraf')) return 'carafer';
+  if (n.startsWith('ouvr') || n.startsWith('debouch')) return 'ouvrir';
+  if (n.startsWith('non') || n.startsWith('aucun') || n.startsWith('direct')) return 'non';
+  return undefined;
+}
+
+const year4 = (v: number | null) => (v && v > 1900 && v < 2200 ? Math.round(v) : undefined);
 
 function toAdvice(p: AiAdviceOut): Pick<LabelInfo, 'advice' | 'drinkFrom' | 'drinkUntil'> {
   const lo = Math.min(p.serve_min, p.serve_max);
@@ -108,14 +132,14 @@ function toAdvice(p: AiAdviceOut): Pick<LabelInfo, 'advice' | 'drinkFrom' | 'dri
     advice: {
       description: p.description || undefined,
       pairings: p.pairings || undefined,
-      decant: p.decant,
-      aeration: p.decant === 'ouvrir' || p.decant === 'carafer' ? p.aeration_minutes ?? undefined : undefined,
-      serveMin: lo,
-      serveMax: hi,
+      decant: toDecant(p.decant),
+      aeration: ['ouvrir', 'carafer'].includes(toDecant(p.decant) ?? '') && p.aeration_minutes ? Math.round(p.aeration_minutes) : undefined,
+      serveMin: Math.round(lo),
+      serveMax: Math.round(hi),
       source: 'ia',
     },
-    drinkFrom: p.drink_from ?? undefined,
-    drinkUntil: p.drink_until ?? undefined,
+    drinkFrom: year4(p.drink_from),
+    drinkUntil: year4(p.drink_until),
   };
 }
 
@@ -137,6 +161,7 @@ async function callClaude<T>(content: unknown[], schema: unknown, apiKey: string
     if (e instanceof Anthropic.RateLimitError) throw new Error('Trop de demandes, réessayez dans un instant.');
     if (e instanceof Anthropic.APIConnectionError) throw new Error('Pas de connexion internet.');
     if (e instanceof Anthropic.APIError) throw new Error(`Erreur du service (${e.status}) : ${e.message}`);
+    if (e instanceof Error && /parse/i.test(e.message)) throw new Error("Réponse de l'IA inattendue, réessayez.");
     throw e;
   }
 }
@@ -148,8 +173,8 @@ async function aiScan(image: string, apiKey: string, model: string): Promise<Lab
     name: z.string().describe('Nom de la cuvée, sans le domaine ni l\'appellation. Chaîne vide si absent.'),
     appellation: z.string().describe('Appellation (AOC/AOP/IGP) telle qu\'écrite officiellement, sans « Appellation … Contrôlée ».'),
     region: z.string().describe('Région viticole (Bordeaux, Bourgogne, Loire, Rhône, Champagne, Alsace…).'),
-    color: z.enum(['rouge', 'blanc', 'rose', 'effervescent', 'liquoreux', '']),
-    vintage: z.number().int().nullable().describe('Millésime, ou null si non millésimé ou illisible.'),
+    color: z.string().describe('Une seule valeur parmi : rouge, blanc, rose, effervescent, liquoreux (chaîne vide si inconnue)'),
+    vintage: z.number().nullable().describe('Millésime, ou null si non millésimé ou illisible.'),
     size_cl: z.number().nullable().describe('Contenance en centilitres, ou null.'),
     grapes: z.string().describe('Cépages, séparés par des virgules. Chaîne vide si inconnus.'),
     ...adviceShape,
@@ -177,8 +202,8 @@ async function aiScan(image: string, apiKey: string, model: string): Promise<Lab
     name: p.name || undefined,
     appellation: p.appellation || undefined,
     region: p.region || undefined,
-    color: (p.color || undefined) as WineColor | undefined,
-    vintage: p.vintage ?? undefined,
+    color: toColor(p.color),
+    vintage: year4(p.vintage),
     size: p.size_cl ?? undefined,
     grapes: p.grapes || undefined,
     ...toAdvice(p),
@@ -201,7 +226,13 @@ export async function aiAdvice(w: Wine) {
     `Contenance : ${w.size} cl`,
   ].filter(Boolean).join('\n');
   const p = await callClaude<AiAdviceOut>(
-    [{ type: 'text', text: `Vin de ma cave (nous sommes en ${new Date().getFullYear()}) :\n${desc}\n\n${SOMMELIER}` }],
+    [
+      // La photo de l'étiquette, si elle existe, aide l'IA à identifier précisément la cuvée
+      ...(w.photo?.startsWith('data:image/')
+        ? [{ type: 'image', source: { type: 'base64', media_type: w.photo.slice(5, w.photo.indexOf(';')), data: w.photo.replace(/^data:[^,]+,/, '') } }]
+        : []),
+      { type: 'text', text: `Vin de ma cave (nous sommes en ${new Date().getFullYear()}) :\n${desc}\n${w.photo ? "La photo jointe montre son étiquette.\n" : ''}\n${SOMMELIER}` },
+    ],
     z.object(adviceShape),
     apiKey,
     getAiModel(),
